@@ -26,8 +26,6 @@
     color: var(--c-text);
     -webkit-font-smoothing: antialiased;
   }
-
-  /* subtle fade-in */
   @keyframes fadeUp {
     from { opacity: 0; transform: translateY(12px); }
     to   { opacity: 1; transform: translateY(0); }
@@ -40,16 +38,12 @@
   .fade-up:nth-child(2) { animation-delay: 0.12s; }
   .fade-up:nth-child(3) { animation-delay: 0.19s; }
   .fade-up:nth-child(4) { animation-delay: 0.26s; }
-
-  /* card */
   .card {
     background: var(--c-surface);
     border: 1px solid var(--c-border);
     border-radius: 14px;
     padding: 28px 30px;
   }
-
-  /* period tabs */
   .period-btn {
     font-size: 13px;
     padding: 5px 16px;
@@ -69,8 +63,6 @@
     background: var(--c-accent-light);
     color: var(--c-accent);
   }
-
-  /* section title */
   .sec-title {
     font-size: 15px;
     font-weight: 700;
@@ -82,8 +74,6 @@
     color: var(--c-muted);
     margin-top: 2px;
   }
-
-  /* improvement cards */
   .improve-card {
     border-left: 3px solid var(--c-accent);
     padding: 20px 22px;
@@ -106,8 +96,6 @@
     color: var(--c-text);
   }
   .improve-body strong { color: var(--c-text-strong); font-weight: 700; }
-
-  /* briefing insight line */
   .insight-line {
     font-size: 12.5px;
     color: var(--c-text);
@@ -117,15 +105,15 @@
     border-radius: 6px;
     margin-top: 10px;
   }
-  .insight-line::before {
-    content: "📌 ";
+  .insight-line::before { content: "📌 "; }
+  .fallback-label {
+    font-size: 11px;
+    color: var(--c-muted);
+    margin-top: 6px;
+    text-align: right;
   }
-
-  /* scrollbar */
   ::-webkit-scrollbar { width: 4px; }
   ::-webkit-scrollbar-thumb { background: #ddd; border-radius: 4px; }
-
-  /* chart canvas wrappers */
   .chart-wrap { position: relative; width: 100%; }
 </style>
 </head>
@@ -133,7 +121,6 @@
 
 <main class="max-w-[1100px] mx-auto px-6 py-10">
 
-  <!-- ======== HEADER ======== -->
   <header class="flex justify-between items-end mb-10 fade-up">
     <div>
       <p class="text-xs tracking-widest uppercase text-gray-400 mb-1">Weekly Auto-Report</p>
@@ -151,22 +138,19 @@
     </div>
   </header>
 
-  <!-- ======== LOADING / ERROR ======== -->
   <div id="loading" class="text-center py-24" style="color:var(--c-muted)">
     <svg class="animate-spin mx-auto mb-3" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" stroke-opacity="0.25"/><path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"/></svg>
     데이터를 불러오고 있습니다…
   </div>
   <div id="error" class="hidden text-center py-24 text-red-400 text-sm"></div>
 
-  <!-- ======== CONTENT ======== -->
   <div id="content" class="hidden space-y-8">
 
-    <!-- ── 1. VOC 유입 추이 ── -->
     <section class="card fade-up">
       <div class="flex justify-between items-center mb-5">
         <div>
           <h2 class="sec-title">VOC 유입 추이</h2>
-          <p class="sec-sub">기간별 VOC 접수 건수</p>
+          <p class="sec-sub" id="trendSub">기간별 VOC 접수 건수</p>
         </div>
         <div class="flex gap-1" id="periodTabs">
           <button data-p="day"  class="period-btn active">일별</button>
@@ -177,29 +161,21 @@
       <div class="chart-wrap" style="height:280px">
         <canvas id="trendChart"></canvas>
       </div>
+      <div id="trendFallback" class="fallback-label hidden"></div>
     </section>
 
-    <!-- ── 2. BRIEFING + 개선안 (Z-flow: 좌→우) ── -->
     <div class="grid md:grid-cols-2 gap-6">
 
-      <!-- LEFT: 브리핑 -->
       <section class="card fade-up">
         <h2 class="sec-title mb-1">브리핑</h2>
         <p class="sec-sub mb-5">문의 유형 · 클래스 · 반 · 멘토별 VOC 분포</p>
-
-        <div style="display:flex;flex-direction:column;gap:31px" id="briefingArea">
-          <!-- filled by JS -->
-        </div>
+        <div style="display:flex;flex-direction:column;gap:31px" id="briefingArea"></div>
       </section>
 
-      <!-- RIGHT: 개선안 초안 -->
       <section class="card fade-up">
         <h2 class="sec-title mb-1">개선안 초안</h2>
         <p class="sec-sub mb-5"></p>
-
-        <div id="improveList" class="space-y-5">
-          <!-- filled by JS -->
-        </div>
+        <div id="improveList" class="space-y-5"></div>
       </section>
 
     </div>
@@ -215,17 +191,26 @@ let trendChart = null;
 let briefingCharts = [];
 
 /* ── helpers ── */
-// Returns [normalPart, boldPart] for x-axis labels
+function todayStr() {
+  const d = new Date();
+  return d.getFullYear() + '-' +
+    String(d.getMonth()+1).padStart(2,'0') + '-' +
+    String(d.getDate()).padStart(2,'0');
+}
+
+function sortAsc(keys) {
+  return [...keys].sort((a, b) => a.localeCompare(b));
+}
+
 function fmtLabelParts(key, period) {
   if (period === "day") {
     const d = new Date(key);
     if (!isNaN(d)) {
-      const mm = String(d.getMonth()+1).padStart(2,'0');
-      const dd = String(d.getDate()).padStart(2,'0');
       const hh = String(d.getHours()).padStart(2,'0');
       const mi = String(d.getMinutes()).padStart(2,'0');
-      return [`${d.getFullYear()}.${mm}.${dd} -`, `${hh}:${mi}`];
+      return ['', `${hh}:${mi}`];
     }
+    if (/^\d{2}:\d{2}/.test(key)) return ['', key.slice(0,5)];
     return [key.replace(/-/g,'.'), ''];
   }
   if (period === "week") {
@@ -234,7 +219,7 @@ function fmtLabelParts(key, period) {
       const yr = wMatch[1];
       const wn = parseInt(wMatch[2], 10);
       const approxMonth = Math.min(12, Math.ceil(wn * 7 / 30.44));
-      const weekInMonth = Math.ceil(wn - (approxMonth-1)*4.35);
+      const weekInMonth = Math.max(1, Math.ceil(wn - (approxMonth-1)*4.35));
       return [yr, `${approxMonth}월 ${weekInMonth}주차`];
     }
     const d2 = new Date(key);
@@ -254,38 +239,113 @@ function fmtLabelParts(key, period) {
   }
   return [key, ''];
 }
-// Multiline label array for Chart.js (line1=normal, line2=bold)
+
 function fmtLabel(key, period) {
   const [a, b] = fmtLabelParts(key, period);
-  return b ? [a, b] : [a];
+  if (!a && b) return [b];
+  if (a && b) return [a, b];
+  return [a || key];
 }
 
 const BLUE  = '#3b82f6';
 const BLUE_LIGHT = 'rgba(59,130,246,0.10)';
 const BLUE_MID   = 'rgba(59,130,246,0.55)';
 
-function chartOpts(aspectRatio) {
-  return {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: { legend: { display: false } },
-    scales: {
-      x: { grid: { display: false }, ticks: { font: { size: 10, family: 'Pretendard' }, color: '#aaa' } },
-      y: { beginAtZero: true, ticks: { stepSize: 1, font: { size: 10 }, color: '#bbb' }, grid: { color: '#f5f5f5' } }
-    }
-  };
-}
+/* ── Bold X-axis plugin (shared) ── */
+const boldXPlugin = {
+  id: 'boldXLine',
+  afterDraw(chart) {
+    const xAxis = chart.scales.x;
+    if (!xAxis) return;
+    const c = chart.ctx;
+    const labelArr = chart.data.labels;
+    const tickCount = xAxis.ticks.length;
+    const maxVisible = Math.floor(chart.width / 70);
+    const skip = tickCount > maxVisible ? Math.ceil(tickCount / maxVisible) : 1;
+    const period = chart.config._period || 'day';
+
+    xAxis.ticks.forEach((tick, i) => {
+      if (i % skip !== 0) return;
+      const label = labelArr[tick.value != null ? tick.value : i];
+      if (!label) return;
+      const x = xAxis.getPixelForTick(i);
+      const yBase = xAxis.bottom + 12;
+      c.save();
+      c.textAlign = 'center';
+      if (Array.isArray(label) && label.length >= 2) {
+        c.fillStyle = '#aaa';
+        c.font = '10px Pretendard';
+        c.fillText(label[0], x, yBase);
+        c.font = 'bold 10px Pretendard';
+        c.fillStyle = '#1a1a1a';
+        c.fillText(label[1], x, yBase + 14);
+      } else {
+        const txt = Array.isArray(label) ? label[0] : label;
+        if (period === 'day') {
+          c.font = 'bold 10px Pretendard';
+          c.fillStyle = '#1a1a1a';
+        } else {
+          c.font = '10px Pretendard';
+          c.fillStyle = '#aaa';
+        }
+        c.fillText(txt, x, yBase);
+      }
+      c.restore();
+    });
+  }
+};
 
 /* ── trend chart ── */
 function drawTrend() {
-  const data = allData.byPeriod[currentPeriod];
-  const keys = Object.keys(data).sort();
-  const labels = keys.map(k => fmtLabel(k, currentPeriod));
-  const counts = keys.map(k => data[k].total);
+  const fallbackEl = document.getElementById("trendFallback");
+  fallbackEl.classList.add("hidden");
+  fallbackEl.textContent = "";
+
+  let keys, counts, labels;
+
+  if (currentPeriod === "day") {
+    const dayData = allData.byPeriod.day;
+    const allDayKeys = sortAsc(Object.keys(dayData));
+    const today = todayStr();
+
+    function getEntriesForDate(prefix) {
+      return allDayKeys.filter(k => k.startsWith(prefix));
+    }
+
+    let useKeys = getEntriesForDate(today);
+    let usedFallback = false;
+    let fallbackDate = "";
+
+    if (useKeys.length === 0) {
+      const datePrefixes = [...new Set(allDayKeys.map(k => k.slice(0,10)))];
+      const sorted = sortAsc(datePrefixes);
+      if (sorted.length > 0) {
+        fallbackDate = sorted[sorted.length - 1];
+        useKeys = getEntriesForDate(fallbackDate);
+        usedFallback = true;
+      }
+    }
+    if (useKeys.length === 0) useKeys = allDayKeys;
+
+    keys = sortAsc(useKeys);
+    counts = keys.map(k => dayData[k].total);
+    labels = keys.map(k => fmtLabel(k, "day"));
+
+    if (usedFallback && fallbackDate) {
+      fallbackEl.classList.remove("hidden");
+      fallbackEl.textContent = `표시 기준: ${fallbackDate} (today 데이터 없음)`;
+    }
+  } else {
+    const periodData = allData.byPeriod[currentPeriod];
+    keys = sortAsc(Object.keys(periodData));
+    counts = keys.map(k => periodData[k].total);
+    labels = keys.map(k => fmtLabel(k, currentPeriod));
+  }
 
   if (trendChart) trendChart.destroy();
   const ctx = document.getElementById("trendChart").getContext("2d");
-  trendChart = new Chart(ctx, {
+
+  const chartConfig = {
     type: currentPeriod === "day" ? "line" : "bar",
     data: {
       labels,
@@ -307,183 +367,111 @@ function drawTrend() {
       maintainAspectRatio: false,
       layout: { padding: { bottom: 28 } },
       scales: {
-        x: {
-          grid: { display: false },
-          ticks: {
-            display: false  // hide default labels entirely
-          }
-        },
+        x: { grid: { display: false }, ticks: { display: false } },
         y: { beginAtZero: true, ticks: { stepSize: 1, font: { size: 10 }, color: '#bbb' }, grid: { color: '#f5f5f5' } }
       },
-      plugins: {
-        legend: { display: false }
-      }
+      plugins: { legend: { display: false } }
     },
-    plugins: [{
-      id: 'boldXLine',
-      afterDraw(chart) {
-        const xAxis = chart.scales.x;
-        if (!xAxis) return;
-        const c = chart.ctx;
-        const labelArr = chart.data.labels;
-        const tickCount = xAxis.ticks.length;
-        // Auto-skip: if many ticks, only show every Nth
-        const maxVisible = Math.floor(chart.width / 80);
-        const skip = tickCount > maxVisible ? Math.ceil(tickCount / maxVisible) : 1;
-
-        xAxis.ticks.forEach((tick, i) => {
-          if (i % skip !== 0) return;
-          const label = labelArr[tick.value != null ? tick.value : i];
-          if (!label) return;
-          const x = xAxis.getPixelForTick(i);
-          const yBase = xAxis.bottom + 12;
-          c.save();
-          c.textAlign = 'center';
-          if (Array.isArray(label) && label.length >= 2) {
-            // Line 1: normal (date part)
-            c.fillStyle = '#aaa';
-            c.font = '10px Pretendard';
-            c.fillText(label[0], x, yBase);
-            // Line 2: bold (time/week/month part)
-            c.font = 'bold 10px Pretendard';
-            c.fillStyle = '#1a1a1a';
-            c.fillText(label[1], x, yBase + 14);
-          } else {
-            const txt = Array.isArray(label) ? label[0] : label;
-            c.fillStyle = '#aaa';
-            c.font = '10px Pretendard';
-            c.fillText(txt, x, yBase);
-          }
-          c.restore();
-        });
-      }
-    }]
-  });
+    plugins: [boldXPlugin]
+  };
+  chartConfig._period = currentPeriod;
+  trendChart = new Chart(ctx, chartConfig);
 }
 
 /* ── briefing ── */
 function renderBriefing() {
   const container = document.getElementById("briefingArea");
   container.innerHTML = "";
-
-  // Destroy old charts
   briefingCharts.forEach(c => c.destroy());
   briefingCharts = [];
 
-  // We pull category-level breakdowns from allData
-  // The API returns byPeriod[period][dateKey].categories
-  // Aggregate across all date-keys for current period
-  const periodData = allData.byPeriod[currentPeriod];
-  const dateKeys = Object.keys(periodData).sort();
-
-  // We need to build per-dimension aggregates
-  // Dimensions expected: 문의유형(category), 클래스(class), 반(group/ban), 멘토(mentor)
-  // The API likely stores categories; we'll derive what we can
+  /*
+    Data sources:
+    - category → briefing.category.counts OR aggregate from byPeriod[].categories
+    - class    → allData.byClass  [[name, count], ...]
+    - ban      → allData.byBan    [[name, count], ...]
+    - mentor   → allData.byMentor [[name, count], ...]
+  */
   const dims = [
-    { key: "category", label: "문의 유형", type: "horizontal-bar" },
-    { key: "class",    label: "클래스",    type: "horizontal-bar" },
-    { key: "ban",      label: "반",        type: "bar" },
-    { key: "mentor",   label: "멘토",      type: "horizontal-bar" },
+    { key: "category", label: "VOC 유형별", arrayKey: null,       type: "horizontal-bar" },
+    { key: "class",    label: "클래스별",    arrayKey: "byClass",  type: "horizontal-bar" },
+    { key: "ban",      label: "반별",        arrayKey: "byBan",    type: "bar" },
+    { key: "mentor",   label: "멘토별",      arrayKey: "byMentor", type: "horizontal-bar" },
   ];
 
-  // Try extracting from allData; adapt to actual shape
-  // If allData has a "briefing" key, use it; otherwise derive from topKeywords / byPeriod
   const briefing = allData.briefing || null;
+  const periodData = allData.byPeriod[currentPeriod];
+  const dateKeys = sortAsc(Object.keys(periodData));
 
   dims.forEach((dim, idx) => {
     const wrapper = document.createElement("div");
-
-    let items = {}; // { label: count }
+    let items = {};
     let insightText = "";
 
-    if (briefing && briefing[dim.key]) {
-      const bd = briefing[dim.key];
-      items = bd.counts || {};
-      insightText = bd.insight || "";
-    } else {
-      // Fallback: try to use category data from byPeriod
-      if (dim.key === "category") {
-        dateKeys.forEach(dk => {
-          const cats = periodData[dk].categories;
-          if (cats) {
-            Object.entries(cats).forEach(([c, n]) => {
-              items[c] = (items[c] || 0) + n;
-            });
-          }
-        });
-      }
-      // If still empty, derive from topKeywords as placeholder
-      if (Object.keys(items).length === 0 && allData.topKeywords) {
-        const slice = allData.topKeywords.slice(
-          idx * 3, idx * 3 + 4
-        );
-        slice.forEach(([kw, n]) => { items[kw] = n; });
-      }
+    // 1) Top-level array (byClass / byBan / byMentor)
+    if (dim.arrayKey && Array.isArray(allData[dim.arrayKey]) && allData[dim.arrayKey].length > 0) {
+      allData[dim.arrayKey].forEach(entry => {
+        items[entry[0]] = (items[entry[0]] || 0) + entry[1];
+      });
+    }
+    // 2) briefing object
+    else if (briefing && briefing[dim.key]) {
+      items = { ...(briefing[dim.key].counts || {}) };
+      insightText = briefing[dim.key].insight || "";
+    }
+    // 3) Aggregate from byPeriod categories (category only)
+    else if (dim.key === "category") {
+      dateKeys.forEach(dk => {
+        const cats = periodData[dk].categories;
+        if (cats) Object.entries(cats).forEach(([c, n]) => { items[c] = (items[c]||0) + n; });
+      });
+    }
+    // 4) topKeywords fallback
+    if (Object.keys(items).length === 0 && allData.topKeywords) {
+      allData.topKeywords.slice(idx*3, idx*3+4).forEach(([kw,n]) => { items[kw]=n; });
     }
 
     const labels = Object.keys(items);
     const values = Object.values(items);
-
     if (labels.length === 0) return;
 
-    // Find the max value index for bold highlighting
     const maxVal = Math.max(...values);
     const maxIdx = values.indexOf(maxVal);
     const maxLabel = labels[maxIdx];
 
-    // Determine insight - bold the top item name + full text
-    if (!insightText && labels.length > 0) {
+    if (!insightText) {
       insightText = `<strong>${dim.label} 기준, '${maxLabel}'이(가) ${maxVal}건으로 가장 높은 비중을 차지합니다.</strong>`;
-    } else if (insightText) {
-      // Bold the entire insight line since it references the top issue
+    } else {
       insightText = `<strong>${insightText}</strong>`;
     }
 
-    const isHorizontal = dim.type === "horizontal-bar";
+    const isH = dim.type === "horizontal-bar";
     const canvasH = Math.max(100, labels.length * 28 + 20);
 
     wrapper.innerHTML = `
       <div class="text-xs font-semibold mb-2" style="color:var(--c-text-strong)">${dim.label}</div>
-      <div class="chart-wrap" style="height:${isHorizontal ? canvasH : 120}px">
+      <div class="chart-wrap" style="height:${isH ? canvasH : 120}px">
         <canvas id="briefChart${idx}"></canvas>
       </div>
       ${insightText ? `<div class="insight-line">${insightText}</div>` : ''}
     `;
     container.appendChild(wrapper);
 
-    // Highlight the max bar with solid blue, others lighter
-    const bgColors = values.map((v, i) => i === maxIdx ? BLUE : BLUE_MID);
-
-    const ctx = document.getElementById(`briefChart${idx}`).getContext("2d");
-    const c = new Chart(ctx, {
+    const bgColors = values.map((v,i) => i === maxIdx ? BLUE : BLUE_MID);
+    const c = new Chart(document.getElementById(`briefChart${idx}`).getContext("2d"), {
       type: "bar",
       data: {
         labels,
-        datasets: [{
-          data: values,
-          backgroundColor: bgColors,
-          borderRadius: 4,
-          barThickness: isHorizontal ? 14 : undefined,
-          maxBarThickness: 22,
-        }]
+        datasets: [{ data: values, backgroundColor: bgColors, borderRadius: 4, barThickness: isH?14:undefined, maxBarThickness: 22 }]
       },
       options: {
-        indexAxis: isHorizontal ? "y" : "x",
+        indexAxis: isH ? "y" : "x",
         responsive: true,
         maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false },
-        },
+        plugins: { legend: { display: false } },
         scales: {
-          x: {
-            beginAtZero: true,
-            grid: { color: '#f5f5f5' },
-            ticks: { font: { size: 10, family: 'Pretendard' }, color: '#aaa', stepSize: 1 }
-          },
-          y: {
-            grid: { display: false },
-            ticks: { font: { size: 11, family: 'Pretendard' }, color: '#666' }
-          }
+          x: { beginAtZero: true, grid: { color:'#f5f5f5' }, ticks: { font:{size:10,family:'Pretendard'}, color:'#aaa', stepSize:1 } },
+          y: { grid: { display: false }, ticks: { font:{size:11,family:'Pretendard'}, color:'#666' } }
         }
       }
     });
@@ -494,9 +482,6 @@ function renderBriefing() {
 /* ── 개선안 ── */
 function renderImprovements() {
   const el = document.getElementById("improveList");
-
-  // allData.topHints contains improvement hints from API
-  // We take top 3 and structure them
   const hints = allData.topHints || [];
   const items = hints.slice(0, 3);
 
@@ -507,12 +492,10 @@ function renderImprovements() {
 
   el.innerHTML = items.map((h, i) => {
     const hintRaw = h.hint || "";
-    // Split multiple proposals by newline or circled numbers
     const hintText = hintRaw
-      .replace(/\n\s*/g, '')  // remove newlines (circled numbers handle line breaks)
+      .replace(/\n\s*/g, '')
       .replace(/(②|③|④|⑤)/g, '<br style="display:block;margin-top:6px;">$1');
 
-    // Build data-backed context from category counts
     const periodData = allData.byPeriod[currentPeriod];
     const dateKeys = Object.keys(periodData).sort();
     let catCount = 0;
@@ -520,9 +503,7 @@ function renderImprovements() {
       const cats = periodData[dk].categories;
       if (cats && cats[h.category]) catCount += cats[h.category];
     });
-    const pct = allData.totalCount > 0
-      ? Math.round(catCount / allData.totalCount * 100)
-      : 0;
+    const pct = allData.totalCount > 0 ? Math.round(catCount / allData.totalCount * 100) : 0;
 
     const currentStatus = catCount > 0
       ? `'${h.category}' 관련 VOC ${catCount}건 (전체 ${pct}%) 접수.`
@@ -563,91 +544,53 @@ document.getElementById("periodTabs").addEventListener("click", (e) => {
   renderBriefing();
 });
 
-/* ── sample data (fallback) ── */
+/* ── sample data (fallback for claude.ai preview) ── */
 function getSampleData() {
   const days = {};
-  const base = new Date("2025-07-07");
-  for (let i = 0; i < 14; i++) {
-    const d = new Date(base); d.setDate(base.getDate() + i);
-    const key = d.toISOString().slice(0,10);
-    const total = Math.floor(Math.random()*12)+3;
+  const todayPrefix = todayStr();
+  [9,10,11,13,14,15,16,17].forEach(h => {
+    const key = `${todayPrefix}T${String(h).padStart(2,'0')}:00:00`;
+    const total = Math.floor(Math.random()*5)+1;
     days[key] = {
       total,
       categories: {
-        "수강 문의": Math.floor(total*0.3),
+        "수강 신청/결제": Math.max(1, Math.floor(total*0.3)),
+        "클래스 운영": Math.floor(total*0.25),
         "콘텐츠 오류": Math.floor(total*0.2),
-        "결제/환불": Math.floor(total*0.18),
         "시스템 장애": Math.floor(total*0.15),
-        "멘토링 불만": Math.floor(total*0.1),
-        "기타": Math.ceil(total*0.07),
-      }
-    };
-  }
-  const weeks = {};
-  ["2025-W27","2025-W28","2025-W29","2025-W30"].forEach((w,i) => {
-    const total = [34,41,28,37][i];
-    weeks[w] = {
-      total,
-      categories: {
-        "수강 문의": Math.floor(total*0.28),
-        "콘텐츠 오류": Math.floor(total*0.22),
-        "결제/환불": Math.floor(total*0.18),
-        "시스템 장애": Math.floor(total*0.15),
-        "멘토링 불만": Math.floor(total*0.1),
-        "기타": Math.ceil(total*0.07),
+        "기타": Math.max(1, Math.ceil(total*0.1)),
       }
     };
   });
+
+  const weeks = {};
+  ["2025-W27","2025-W28","2025-W29","2025-W30"].forEach((w,i) => {
+    const total = [34,41,28,37][i];
+    weeks[w] = { total, categories: { "수강 신청/결제":Math.floor(total*0.28), "클래스 운영":Math.floor(total*0.22), "콘텐츠 오류":Math.floor(total*0.18), "시스템 장애":Math.floor(total*0.15), "멘토링 불만":Math.floor(total*0.1), "기타":Math.ceil(total*0.07) } };
+  });
+
   const months = {};
   ["2025-04","2025-05","2025-06","2025-07"].forEach((m,i) => {
     const total = [98,127,112,140][i];
-    months[m] = {
-      total,
-      categories: {
-        "수강 문의": Math.floor(total*0.28),
-        "콘텐츠 오류": Math.floor(total*0.22),
-        "결제/환불": Math.floor(total*0.18),
-        "시스템 장애": Math.floor(total*0.15),
-        "멘토링 불만": Math.floor(total*0.1),
-        "기타": Math.ceil(total*0.07),
-      }
-    };
+    months[m] = { total, categories: { "수강 신청/결제":Math.floor(total*0.28), "클래스 운영":Math.floor(total*0.22), "콘텐츠 오류":Math.floor(total*0.18), "시스템 장애":Math.floor(total*0.15), "멘토링 불만":Math.floor(total*0.1), "기타":Math.ceil(total*0.07) } };
   });
 
   return {
     totalCount: 140,
     byPeriod: { day: days, week: weeks, month: months },
+    byClass: [["클래스_A",42],["클래스_B",33],["클래스_C",28],["클래스_D",22],["클래스_E",15]],
+    byBan:   [["A-1",38],["A-2",35],["B-1",31],["B-2",22],["C-1",14]],
+    byMentor:[["멘토_01",28],["멘토_02",24],["멘토_03",22],["멘토_04",18],["멘토_05",16]],
     briefing: {
       category: {
-        counts: { "수강 문의": 39, "콘텐츠 오류": 31, "결제/환불": 25, "시스템 장애": 21, "멘토링 불만": 14, "기타": 10 },
-        insight: "'수강 문의'가 전체 VOC의 28%로 가장 높은 비중을 차지하며, 수강 신청 프로세스 점검이 필요합니다."
-      },
-      "class": {
-        counts: { "데이터 분석 부트캠프": 42, "UX 디자인 코스": 33, "백엔드 심화": 28, "프론트엔드 입문": 22, "PM 과정": 15 },
-        insight: "'데이터 분석 부트캠프'에서 VOC가 집중되고 있어, 해당 클래스 운영 점검이 우선시됩니다."
-      },
-      ban: {
-        counts: { "1반": 38, "2반": 35, "3반": 31, "4반": 22, "5반": 14 },
-        insight: "1반과 2반에서 VOC가 집중되며, 반별 학습 환경 차이를 확인할 필요가 있습니다."
-      },
-      mentor: {
-        counts: { "김민수 멘토": 28, "이지영 멘토": 24, "박서준 멘토": 22, "최예린 멘토": 18, "정하늘 멘토": 16 },
-        insight: "'김민수 멘토' 관련 VOC가 가장 많으며, 멘토링 품질 모니터링이 권장됩니다."
+        counts: { "수강 신청/결제":39, "클래스 운영":31, "콘텐츠 오류":25, "시스템 장애":21, "멘토링 불만":14, "기타":10 },
+        insight: "'수강 신청/결제'가 전체 VOC의 28%로 가장 높은 비중을 차지하며, 수강 신청 프로세스 점검이 필요합니다."
       }
     },
     topHints: [
-      {
-        category: "수강 문의",
-        hint: "① 수강 신청 페이지에 실시간 FAQ 챗봇을 도입하여 반복 문의를 자동 응대\n② 수강 신청 가이드 영상(1분 내외)을 제작해 주요 진입점에 배치"
-      },
-      {
-        category: "콘텐츠 오류",
-        hint: "① 콘텐츠 QA 체크리스트를 주 단위로 운영하여 오류를 사전 차단\n② 수강생 오류 제보 시 즉시 수정 → 24시간 내 완료 SLA를 도입"
-      },
-      {
-        category: "시스템 장애",
-        hint: "① 피크 시간대(20~22시) 서버 오토스케일링 임계값을 기존 대비 20% 하향 조정\n② 장애 발생 시 수강생 대상 실시간 상태 페이지를 공개하여 문의 유입을 선제 차단"
-      }
+      { category:"수강 신청/결제", hint:"① 수강 신청 페이지에 실시간 FAQ 챗봇을 도입하여 반복 문의를 자동 응대\n② 수강 신청 가이드 영상(1분 내외)을 제작해 주요 진입점에 배치" },
+      { category:"콘텐츠 오류", hint:"① 콘텐츠 QA 체크리스트를 주 단위로 운영하여 오류를 사전 차단\n② 수강생 오류 제보 시 즉시 수정 → 24시간 내 완료 SLA를 도입" },
+      { category:"시스템 장애", hint:"① 피크 시간대(20~22시) 서버 오토스케일링 임계값을 기존 대비 20% 하향 조정\n② 장애 발생 시 수강생 대상 실시간 상태 페이지를 공개하여 문의 유입을 선제 차단" }
     ]
   };
 }
