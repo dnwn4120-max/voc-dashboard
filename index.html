@@ -167,7 +167,7 @@
     <div class="space-y-6">
 
       <section class="card fade-up">
-        <h2 class="sec-title mb-1">브리핑</h2>
+        <h2 class="sec-title mb-1">차트</h2>
         <p class="sec-sub mb-5">문의 유형 · 클래스 · 반 · 멘토별 VOC 분포</p>
         <div style="display:flex;flex-direction:column;gap:31px" id="briefingArea"></div>
       </section>
@@ -431,13 +431,14 @@ function renderBriefing() {
       allData.topKeywords.slice(idx*3, idx*3+4).forEach(([kw,n]) => { items[kw]=n; });
     }
 
-    const labels = Object.keys(items);
-    const values = Object.values(items);
+    // Sort by count descending
+    const sorted = Object.entries(items).sort((a, b) => b[1] - a[1]);
+    const labels = sorted.map(e => e[0]);
+    const values = sorted.map(e => e[1]);
     if (labels.length === 0) return;
 
-    const maxVal = Math.max(...values);
-    const maxIdx = values.indexOf(maxVal);
-    const maxLabel = labels[maxIdx];
+    const maxLabel = labels[0];
+    const maxVal = values[0];
 
     if (!insightText) {
       insightText = `<strong>${dim.label} 기준, '${maxLabel}'이(가) ${maxVal}건으로 가장 높은 비중을 차지합니다.</strong>`;
@@ -450,14 +451,16 @@ function renderBriefing() {
 
     wrapper.innerHTML = `
       <div class="text-xs font-semibold mb-2" style="color:var(--c-text-strong)">${dim.label}</div>
+      ${insightText ? `<div class="insight-line" style="margin-bottom:10px;margin-top:0">${insightText}</div>` : ''}
       <div class="chart-wrap" style="height:${isH ? canvasH : 120}px">
         <canvas id="briefChart${idx}"></canvas>
       </div>
-      ${insightText ? `<div class="insight-line">${insightText}</div>` : ''}
     `;
     container.appendChild(wrapper);
 
-    const bgColors = values.map((v,i) => i === maxIdx ? BLUE : BLUE_MID);
+    const TOP_COLORS = ['#2563eb', '#3b82f6', '#60a5fa'];
+    const REST_COLOR = '#e5e7eb';
+    const bgColors = values.map((v, i) => i < 3 ? TOP_COLORS[i] : REST_COLOR);
     const c = new Chart(document.getElementById(`briefChart${idx}`).getContext("2d"), {
       type: "bar",
       data: {
