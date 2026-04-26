@@ -70,9 +70,10 @@
 │   URL: https://voc-dashboard-iota.vercel.app/            │
 └──────────────────────────────────────────────────────────┘
 
-                ─── 추가 흐름 (5/1 이후 활성) ───
+                ─── 주간 리포트 흐름 ───
 
-[주간 트리거] ──▶ Claude API ──▶ Google Docs ──▶ Slack/이메일 발송
+[주간 트리거] ──▶ Claude API (Tool use) ──▶ HTML 이메일 + Slack Block Kit
+                       (구조화 JSON)              (가로 막대 차트 포함)
 ```
 
 ---
@@ -127,18 +128,25 @@
 - **URL**: https://voc-dashboard-iota.vercel.app/
 - **자동 배포**: GitHub repo에 push → Vercel이 감지 → 자동 재배포
 
-### 4.6 자동 트리거 (계획)
-- **`onChange` 트리거**: `01_Raw`에 새 VOC 행 추가 시 → 자동 분류 → `02_Classified` 저장
-- 디바운스/Lock으로 중복 호출 방지
-- 일일 호출 카운터로 비용 가드레일
+### 4.6 자동 트리거
+- **`onChange` 트리거** (구현 완료): `01_Raw`에 새 VOC 행 추가 시 → 자동 분류 → `02_Classified` 저장
+- LockService로 중복 호출 방지 + 빈 행(content/channel 누락) 자동 skip
+- 사람이 한 셀씩 입력해도 모든 필수 필드가 채워질 때까지 대기
 
-### 4.7 주간 리포트 (계획)
-- 매주 월요일 09:00 시간 기반 트리거
-- 지난 주 `04_Aggregates` 데이터 + 대표 VOC를 Claude에 전달 → 마크다운 리포트 생성
+### 4.7 주간 리포트 (구현 완료)
+- 매주 월요일 09:00 시간 기반 트리거 (수동 등록 시 활성)
+- 지난 주 02_Classified 데이터 + 전주 비교용 데이터를 Claude에 전달
+- **Tool use (`create_weekly_report`)** 로 구조화된 JSON 응답 강제
 - 출력 채널:
-  - Google Docs 자동 생성 (도메인 사용자 보기 권한)
-  - 이메일 (`MailApp`)
-  - Slack Incoming Webhook
+  - **HTML 이메일** (`MailApp.sendEmail` + htmlBody)
+    - 가로 막대 차트 (VOC 유형별/클래스별/반별/멘토별 Top 5)
+    - Top 1 데이터명 볼드 강조
+    - 개선안: 팩트(수치 강조) + 개선 아이디어(요약 + 세부 불렛)
+  - **Slack Block Kit** (Incoming Webhook)
+    - 텍스트 막대 그래프 (`█████░░░░░ N 건  데이터명`)
+    - 헤더 / 필드 그리드 / divider로 위계 분리
+    - 화살표(→) + 불렛(•) 구조화
+- 모든 텍스트는 존댓말 + 짧은 문장
 - `05_Reports`에 발송 메타 기록
 
 ---
@@ -151,7 +159,7 @@
 |---|---|---|
 | `00_Students` | 수강생 마스터 (3기수 × 20클래스 × 2반 × 3명) | 360 |
 | `01_Raw` | VOC 원본 입력 | 170 (더미) |
-| `02_Classified` | 분류 결과 | 50 (한도 도달, 5/1 후 120건 추가) |
+| `02_Classified` | 분류 결과 | 170 |
 | `03_Categories` | 카테고리 마스터 | 28 |
 | `04_Aggregates` | 일/주/월 × 카테고리 집계 | 자동 갱신 |
 | `05_Reports` | 발송된 리포트 메타 | 0 (5/1 후) |
@@ -189,18 +197,21 @@
 - [x] 더미 학생 360명 생성 (`SeedStudents.gs / seedStudents`)
 - [x] 더미 VOC 170건 생성 (`SeedVOC.gs / seedDummyVOC`)
 - [x] 분류기 구현 (`Classifier.gs / classifyOne, classifyAll`)
-- [x] 50건 분류 완료 (Claude Sonnet 4.6, Tool use 기반)
+- [x] 170건 전수 분류 완료 (Claude Sonnet 4.6, Tool use 기반)
 - [x] 분류 비중 검증 (`RatioCheck.gs / checkRatio`)
 - [x] 일/주/월 집계 (`Aggregator.gs / rebuildAggregates`)
 - [x] HTML 대시보드 (`index.html`)
 - [x] GitHub repo 생성 (`voc-dashboard`)
 - [x] Vercel 배포 (https://voc-dashboard-iota.vercel.app/)
-- [x] 5/1 자동 알림 트리거 (`Reminder.gs / setupReminder`)
+- [x] **`onChange` 자동 분류 트리거** (`AutoClassify.gs / setupAutoTrigger`)
+- [x] **주간 리포트** (`Reporter.gs / generateWeeklyReport`)
+  - HTML 이메일 (가로 막대 차트 + 팩트/개선아이디어 구조)
+  - Slack Block Kit (텍스트 막대 그래프 + 위계)
+  - 존댓말 + 짧은 문장 강제
 
-### ⏳ 진행 예정 (한도 상향 후 또는 5/1 이후)
-- [ ] 남은 120건 분류 완료 (`classifyAll` 재실행)
-- [ ] `onChange` 트리거 — 새 VOC 자동 분류
-- [ ] 주간 리포트 (`Reporter.gs`) — Slack/이메일/Docs
+### ⏳ 향후 추가 (선택)
+- [ ] 매주 월요일 09:00 자동 발송 트리거 활성화 (`setupWeeklyTrigger` 한 번만 실행)
+- [ ] 일별 자동 집계 트리거 (`rebuildAggregates` 시간 기반)
 - [ ] 카테고리 자동 추출 (Bootstrap, 신규 패턴 감지)
 - [ ] 분류 기준 명세 강화 (severity·sentiment 회사 기준)
 
@@ -315,7 +326,14 @@ VOC 자동화 (Google Sheets)
     ├── RatioCheck.gs        ── checkRatio()
     ├── Aggregator.gs        ── rebuildAggregates()
     ├── WebDashboard.gs      ── doGet(), getDashboardData(), exportDashboardHtml()
-    └── Reminder.gs          ── setupReminder(), notifyMay1()
+    ├── AutoClassify.gs      ── onRawChange(), setupAutoTrigger(), disableAutoTrigger()
+    ├── Reporter.gs          ── generateWeeklyReport(), testWeeklyReport(),
+    │                           setupWeeklyTrigger(), disableWeeklyTrigger(),
+    │                           setupQuickTestTrigger(), _runQuickTestReport(),
+    │                           + 빌더 헬퍼 (_buildBar, _buildBarChart,
+    │                           _buildEmailHtml, _slackBar, _slackBarSection,
+    │                           _buildSlackBlocks, _askClaudeStructured 등)
+    └── Reminder.gs          ── setupReminder(), notifyMay1() (5/1 지나면 무용)
 ```
 
 ### 10.2 디렉토리 구조 (프론트엔드)
